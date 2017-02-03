@@ -162,11 +162,6 @@ let rec print_val e =
 exception TypeError of string;;
 exception ParseError of string
 
-let rec eval sexp env =
-  match sexp with
-  | Literal l -> (l, env)
-  | _ -> raise (TypeError "uh")
-
 let rec build_ast sexp =
   match sexp with
   | Primitive _ -> raise ThisCan'tHappenError
