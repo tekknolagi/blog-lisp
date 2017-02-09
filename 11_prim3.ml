@@ -230,6 +230,8 @@ let rec build_ast sexp =
           in Defexp (Def (n, names, build_ast e))
       | [Symbol "apply"; fnexp; args] ->
           Apply (build_ast fnexp, build_ast args)
+      | (Symbol "cond")::conditions ->
+(* do a thing *)
       | fnexp::args -> Call (build_ast fnexp, List.map build_ast args)
       | [] -> raise (ParseError "poorly formed expression"))
   | Pair _ -> Literal sexp
@@ -322,7 +324,7 @@ let basis =
   in
   let prim_eq = function
     | [a; b] -> Boolean (a=b)
-    | _ -> raise (TypeError "(= a b)")
+    | _ -> raise (TypeError "(eq a b)")
   in
   let prim_atomp = function
     | [Pair (_, _)] -> Boolean false
