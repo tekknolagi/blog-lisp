@@ -208,11 +208,9 @@ exception ParseError of string
 let rec build_ast sexp =
   let rec cond_to_if = function
     | [] -> Literal (Symbol "error")
-    | [Pair(cond, Pair(res, Nil))] ->
-        If (build_ast cond, build_ast res, Literal (Symbol "error"))
     | (Pair(cond, Pair(res, Nil)))::condpairs ->
         If (build_ast cond, build_ast res, cond_to_if condpairs)
-    | _ -> raise (TypeError "(cond conditions)")
+    | _ -> raise (TypeError "(cond c0 c1 c2 c3 ...)")
   in
   match sexp with
   | Primitive _ | Closure _ -> raise ThisCan'tHappenError
