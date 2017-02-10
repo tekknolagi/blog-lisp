@@ -243,11 +243,15 @@ let rec build_ast sexp =
       | [] -> raise (ParseError "poorly formed expression"))
   | Pair _ -> Literal sexp
 
+let extend newenv oldenv =
+  List.fold_right (fun (b, v) acc -> bindloc (b, v, acc)) newenv oldenv
+
 let rec evalexp exp env =
   let evalapply f vs =
     match f with
     | Primitive (_, f) -> f vs
-    | Closure (ns, e, clenv) -> evalexp e (bindlist ns vs clenv)
+    | Closure (ns, e, clenv) ->
+        evalexp e (extend (bindlist ns vs clenv) env)
     | _ -> raise (TypeError "(apply prim '(args)) or (prim args)")
   in
   let rec ev = function
