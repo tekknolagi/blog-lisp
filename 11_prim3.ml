@@ -206,6 +206,14 @@ exception TypeError of string;;
 exception ParseError of string
 
 let rec build_ast sexp =
+  let rec cond_to_if = function
+    | [] -> Literal (Symbol "error")
+    | [Pair(cond, Pair(res, Nil))] ->
+        If (build_ast cond, build_ast res, Literal (Symbol "error"))
+    | (Pair(cond, Pair(res, Nil)))::condpairs ->
+        If (build_ast cond, build_ast res, cond_to_if condpairs)
+    | _ -> raise (TypeError "(cond conditions)")
+  in
   match sexp with
   | Primitive _ | Closure _ -> raise ThisCan'tHappenError
   | Fixnum _ | Boolean _ | Nil | Quote _ -> Literal sexp
@@ -230,8 +238,7 @@ let rec build_ast sexp =
           in Defexp (Def (n, names, build_ast e))
       | [Symbol "apply"; fnexp; args] ->
           Apply (build_ast fnexp, build_ast args)
-      | (Symbol "cond")::conditions ->
-(* do a thing *)
+      | (Symbol "cond")::conditions -> cond_to_if conditions
       | fnexp::args -> Call (build_ast fnexp, List.map build_ast args)
       | [] -> raise (ParseError "poorly formed expression"))
   | Pair _ -> Literal sexp
