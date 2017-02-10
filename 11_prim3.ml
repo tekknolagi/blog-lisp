@@ -199,7 +199,6 @@ and string_val e =
     | Quote v -> "'" ^ string_val v
     | Primitive (name, _) -> "#<primitive:" ^ name ^ ">"
     | Closure (ns, e, _) -> "#<closure>"
-(*        "[lambda (" ^ spacesep ns ^ ") " ^ string_exp e ^ "]"  *)
 
 
 exception TypeError of string;;
