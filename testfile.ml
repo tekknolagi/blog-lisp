@@ -6,4 +6,4 @@
 
 (val ls (List.map (+ 1) '(1 2 3)))
 (List.iter (Printf.printf "%d ") ls)
-(print_endline ())
+(print_newline ())
