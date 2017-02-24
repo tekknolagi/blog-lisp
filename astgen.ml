@@ -102,6 +102,10 @@ let rec read_sexp stm =
       let cdr = read_list stm in
       Pair(car, cdr)
   in
+  let rec read_string stm =
+    let c = read_char stm in
+    if c = '"' then "" else stringOfChar c ^ read_string stm
+  in
   eat_whitespace stm;
   let c = read_char stm in
   if is_symstartchar c
@@ -116,6 +120,7 @@ let rec read_sexp stm =
       | 'f' -> Boolean(false)
       | x -> raise (SyntaxError ("Invalid boolean literal " ^ (stringOfChar x)))
   else if c = '\'' then Quote (read_sexp stm)
+  else if c = '"' then Quote (Symbol (read_string stm))
   else raise (SyntaxError ("Unexpected char " ^ (stringOfChar c)));;
 
 let rec is_list e =
@@ -223,8 +228,7 @@ let rec transform_ast ast =
   let open Ast_helper in
   let open Asttypes in
   let open Parsetree in
-  let open Longident in
-  let mklid s = Location.mknoloc (Lident s) in
+  let mklid s = Location.mknoloc (Longident.parse s) in
   (* let unit_ = Exp.construct (mklid "()") None in *)
   let mkvarpat name = Pat.var (Location.mknoloc name) in
   let rec tr = function
@@ -233,6 +237,7 @@ let rec transform_ast ast =
   | Literal Boolean false -> Exp.construct (mklid "false") None
   | Literal Symbol s -> Exp.constant (Const_string (s, None))
   | Literal Nil | Literal Quote Nil -> Exp.construct (mklid "[]") None
+  | Literal Quote Symbol s -> tr (Literal (Symbol s))
   | Literal Quote Pair (a, b) when is_list (Pair (a, b)) ->
       Exp.construct (mklid "::") (Some (Exp.tuple [tr (Literal a);
                                                    tr (Literal (Quote b))]))
@@ -256,7 +261,7 @@ let rec transform_ast ast =
 
 let process_file stm filename =
   let structure = List.map transform_ast (read_asts stm) in
-  let () = Printast.implementation Format.err_formatter structure in
+  (* let () = Printast.implementation Format.err_formatter structure in *)
   output_string stdout Config.ast_impl_magic_number;
   output_value  stdout filename;
   output_value  stdout structure
