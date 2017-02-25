@@ -229,14 +229,13 @@ let rec transform_ast ast =
   let open Asttypes in
   let open Parsetree in
   let mklid s = Location.mknoloc (Longident.parse s) in
-  let unit_ = Exp.construct (mklid "()") None in
   let mkvarpat name = Pat.var (Location.mknoloc name) in
   let rec tr = function
   | Literal Fixnum i -> Exp.constant (Const_int i)
   | Literal Boolean true -> Exp.construct (mklid "true") None
   | Literal Boolean false -> Exp.construct (mklid "false") None
   | Literal Symbol s -> Exp.constant (Const_string (s, None))
-  | Literal Nil -> unit_
+  | Literal Nil -> Exp.construct (mklid "()") None
   | Literal Quote Nil -> Exp.construct (mklid "[]") None
   | Literal Quote Symbol s -> tr (Literal (Symbol s))
   | Literal Quote Pair (a, b) when is_list (Pair (a, b)) ->
