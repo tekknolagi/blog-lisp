@@ -35,7 +35,7 @@
 
 
 (define lookup. (key alist)
-  (cond ((null. alist) (error (cat key (cat '-- 'not-found))))
+  (cond ((null. alist) 'error)
         ((eq (caar alist) key) (cadar alist))
         (#t (lookup. key (cdr alist)))))
 
@@ -51,13 +51,11 @@
        ((eq (car e) 'eq)    (eq    (eval. (cadr e)  env)
                                    (eval. (caddr e) env)))
        ((eq (car e) 'car)   (car   (eval. (cadr e)  env)))
-       ((eq (car e) 'error) (error (eval. (cadr e)  env)))
        ((eq (car e) 'null)  (null. (eval. (cadr e)  env)))
        ((eq (car e) 'cdr)   (cdr   (eval. (cadr e)  env)))
        ((eq (car e) 'cons)  (cons  (eval. (cadr e)  env)
                                    (eval. (caddr e) env)))
        ((eq (car e) 'cond)  (eval-cond. (cdr e) env))
-
        ((eq (car e) '+)     (+ (eval. (cadr e) env)
                                (eval. (caddr e) env)))
        ((eq (car e) '*)     (* (eval. (cadr e) env)

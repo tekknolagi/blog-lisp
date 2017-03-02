@@ -199,7 +199,6 @@ and string_val e =
     | Quote v -> "'" ^ string_val v
     | Primitive (name, _) -> "#<primitive:" ^ name ^ ">"
     | Closure (ns, e, _) -> "#<closure>"
-        (* "[lambda (" ^ spacesep ns ^ ") " ^ string_exp e ^ "]" *)
 
 
 exception TypeError of string;;
@@ -306,8 +305,6 @@ let rec repl stm env =
   print_endline (string_val result);
   repl stm env';;
 
-exception UserError of string
-
 let basis =
   let numprim name op =
     (name, (function [Fixnum a; Fixnum b] -> Fixnum (op a b)
@@ -325,10 +322,7 @@ let basis =
     | [a; b] -> Pair(a, b)
     | _ -> raise (TypeError "(pair a b)")
   in
-  let prim_car es =
-    (* let s = String.concat ", " (List.map string_val es) in
-    let () = print_endline ("car on " ^ s) in *)
-    match es with
+  let prim_car = function
     | [Pair (car, _)] -> car
     | [e] -> raise (TypeError ("(car non-nil-pair) " ^ string_val e))
     | _ -> raise (TypeError "(car single-arg)")
@@ -348,18 +342,10 @@ let basis =
     | _ -> raise (TypeError "(sym? single-arg)")
   in
   let prim_atomp = function
-    | [Nil] -> let () = print_endline "nil!!!" in Boolean true
+    | [Nil] -> Boolean true
     | [Pair (_, _)] -> Boolean false
     | [_] -> Boolean true
     | _ -> raise (TypeError "(atom? single-arg)")
-  in
-  let prim_error = function
-    | [Symbol s] -> raise (UserError s)
-    | _ -> raise (TypeError "(error sym)")
-  in
-  let prim_cat = function
-    | [Symbol a; Symbol b] -> Symbol (a ^ b)
-    | _ -> raise (TypeError "(cat sym1 sym2)")
   in
   let newprim acc (name, func) =
     bind (name, Primitive(name, func), acc)
@@ -378,9 +364,7 @@ let basis =
     ("cdr", prim_cdr);
     ("eq", prim_eq);
     ("atom?", prim_atomp);
-    ("sym?", prim_symp);
-    ("error", prim_error);
-    ("cat", prim_cat)
+    ("sym?", prim_symp)
   ]
 
 let main =
