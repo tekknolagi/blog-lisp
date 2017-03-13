@@ -78,8 +78,7 @@ let rec lookup : name * 'a env -> 'a = function
   | (n, (n', _)::bs) -> lookup (n, bs)
 
 let bindlist ns vs env =
-  (* List.fold_left2 (fun acc n v -> bind (n, v, acc)) env ns vs *)
-  List.fold_right2 (fun n v acc -> bind (n, v, acc)) ns vs env
+  List.fold_left2 (fun acc n v -> bind (n, v, acc)) env ns vs
 
 let rec env_to_val =
   let b_to_val (n, vor) =
@@ -174,10 +173,13 @@ let rec string_exp =
   | Apply (f, e) -> "(apply " ^ string_exp f ^ " " ^ string_exp e ^ ")"
   | Call (f, es) -> "(" ^ string_exp f ^ " " ^ spacesep_exp es ^ ")"
   | Lambda (ns, e) ->  "(lambda (" ^ spacesep ns ^ ") " ^ string_exp e ^ ")"
-  | Let (bs, e) -> "#<let>"
+  | Let (bs, e) ->
+      let string_of_binding (n, e) = "(" ^ n ^ " " ^ (string_exp e) ^ ")" in
+      let bindings_strings = List.map string_of_binding bs in
+      "(let (" ^ (String.concat " " bindings_strings) ^ ") " ^ string_exp e ^ ")"
   | Defexp (Val (n, e)) -> "(val " ^ n ^ " " ^ string_exp e ^ ")"
   | Defexp (Def (n, ns, e)) ->
-          "(define " ^ n ^ "(" ^ spacesep ns ^ ") " ^ string_exp e ^ ")"
+      "(define " ^ n ^ "(" ^ spacesep ns ^ ") " ^ string_exp e ^ ")"
   | Defexp (Exp e) -> string_exp e
 
 and string_val e =
@@ -198,7 +200,7 @@ and string_val e =
     | Symbol s -> s
     | Nil -> "nil"
     | Pair (a, b) ->
-            "(" ^ (if is_list e then string_list e else string_pair e) ^ ")"
+        "(" ^ (if is_list e then string_list e else string_pair e) ^ ")"
     | Quote v -> "'" ^ string_val v
     | Primitive (name, _) -> "#<primitive:" ^ name ^ ">"
     | Closure (ns, e, _) -> "#<closure>"
@@ -295,9 +297,8 @@ let rec evalexp exp env =
     | Call (e, es) -> evalapply (ev e) (List.map ev es)
     | Lambda (ns, e) -> Closure (ns, e, env)
     | Let (bs, e) ->
-        let mkbinding (n, e) = n, ref (Some (ev e)) in
-        (* In-order: first bindings take precedence *)
-        evalexp e (extend (List.map mkbinding bs) env)
+        let evbinding (n, e) = n, ref (Some (ev e)) in
+        evalexp e (extend (List.map evbinding bs) env)
     | Defexp d -> raise ThisCan'tHappenError
   in ev exp
 
