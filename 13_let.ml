@@ -41,7 +41,7 @@ type lobject =
 
 and value = lobject
 and name = string
-and let_kind = LET | LETSTAR
+and let_kind = LET | LETSTAR | LETREC
 and exp =
   | Literal of value
   | Var of name
@@ -64,7 +64,7 @@ exception ThisCan'tHappenError;;
 exception NotFound of string;;
 exception UnspecifiedValue of string
 
-let mkloc () = ref None
+let mkloc _ = ref None
 let bind (n, v, e) = (n, ref (Some v))::e
 let bindloc : name * 'a option ref * 'a env -> 'a env = fun (n, vor, e) -> (n, vor)::e
 
@@ -80,6 +80,9 @@ let rec lookup : name * 'a env -> 'a = function
 
 let bindlist ns vs env =
   List.fold_left2 (fun acc n v -> bind (n, v, acc)) env ns vs
+
+let bindloclist ns vs env =
+  List.fold_left2 (fun acc n v -> bindloc (n, v, acc)) env ns vs
 
 let rec env_to_val =
   let b_to_val (n, vor) =
@@ -176,7 +179,11 @@ let rec string_exp =
   | Call (f, es) -> "(" ^ string_exp f ^ " " ^ spacesep_exp es ^ ")"
   | Lambda (ns, e) ->  "(lambda (" ^ spacesep ns ^ ") " ^ string_exp e ^ ")"
   | Let (kind, bs, e) ->
-      let str = match kind with | LET -> "let" | LETSTAR -> "let*" in
+      let str = match kind with
+                | LET -> "let"
+                | LETSTAR -> "let*"
+                | LETREC -> "letrec"
+      in
       let bindings = spacesep (List.map string_of_binding bs) in
       "(" ^ str ^ " (" ^ bindings ^ ") " ^ string_exp e ^ ")"
   | Defexp (Val (n, e)) -> "(val " ^ n ^ " " ^ string_exp e ^ ")"
@@ -223,10 +230,9 @@ let rec build_ast sexp =
         If (build_ast cond, build_ast res, cond_to_if condpairs)
     | _ -> raise (TypeError "(cond c0 c1 c2 c3 ...)")
   in
-  let valid_let = function | "let" | "let*" -> true | _ -> false in
-  let to_kind = function | "let" -> LET | "let*" -> LETSTAR
-                         | _ -> raise (TypeError "Unknown let")
-  in
+  let let_kinds = ["let", LET; "let*", LETSTAR; "letrec", LETREC] in
+  let valid_let s = List.mem_assoc s let_kinds in
+  let to_kind s = List.assoc s let_kinds in
   match sexp with
   | Primitive _ | Closure _ -> raise ThisCan'tHappenError
   | Fixnum _ | Boolean _ | Nil | Quote _ -> Literal sexp
@@ -263,7 +269,7 @@ let rec build_ast sexp =
           in
           let bindings = List.map mkbinding (pair_to_list bindings) in
           let () = assert_unique (List.map fst bindings) in
-          Let (to_kind s, bindings, (build_ast exp))
+          Let (to_kind s, bindings, build_ast exp)
       | fnexp::args -> Call (build_ast fnexp, List.map build_ast args)
       | [] -> raise (ParseError "poorly formed expression"))
   | Pair _ -> Literal sexp
@@ -275,9 +281,13 @@ let rec evalexp exp env =
   let evalapply f vs =
     match f with
     | Primitive (_, f) -> f vs
-    | Closure (ns, e, clenv) ->
-        evalexp e (extend (bindlist ns vs clenv) env)
+    | Closure (ns, e, clenv) -> evalexp e (bindlist ns vs clenv)
     | _ -> raise (TypeError "(apply prim '(args)) or (prim args)")
+  in
+  let rec unzip l =
+    match l with
+    | [] -> [], []
+    | (a,b)::rst -> let (flist, slist) = unzip rst in a::flist, b::slist
   in
   let rec ev = function
     | Literal Quote e -> e
@@ -302,12 +312,18 @@ let rec evalexp exp env =
     | Call (Var "env", []) -> env_to_val env
     | Call (e, es) -> evalapply (ev e) (List.map ev es)
     | Lambda (ns, e) -> Closure (ns, e, env)
-    | Let (LET, bs, e) ->
+    | Let (LET, bs, body) ->
         let evbinding (n, e) = n, ref (Some (ev e)) in
-        evalexp e (extend (List.map evbinding bs) env)
-    | Let (LETSTAR, bs, e) ->
-        let evbinding acc (n, e) = bind(n, evalexp e acc, acc) in
-        evalexp e (extend (List.fold_left evbinding [] bs) env)
+        evalexp body (extend (List.map evbinding bs) env)
+    | Let (LETSTAR, bs, body) ->
+        let evbinding acc (n, e) = bind (n, evalexp e acc, acc) in
+        evalexp body (extend (List.fold_left evbinding [] bs) env)
+    | Let (LETREC, bs, body) ->
+        let names, values = unzip bs in
+        let env' = bindloclist names (List.map mkloc values) env in
+        let updates = List.map (fun (n, e) -> n, Some (evalexp e env')) bs in
+        let () = List.iter (fun (n, v) -> (List.assoc n env') := v) updates in
+        evalexp body env'
     | Defexp d -> raise ThisCan'tHappenError
   in ev exp
 
