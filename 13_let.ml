@@ -41,6 +41,7 @@ type lobject =
 
 and value = lobject
 and name = string
+and let_kind = LET | LETSTAR
 and exp =
   | Literal of value
   | Var of name
@@ -50,7 +51,7 @@ and exp =
   | Apply of exp * exp
   | Call of exp * exp list
   | Lambda of name list * exp
-  | Let of (name * exp) list * exp
+  | Let of let_kind * (name * exp) list * exp
   | Defexp of def
 
 and def =
@@ -163,6 +164,7 @@ let spacesep ns = String.concat " " ns
 
 let rec string_exp =
   let spacesep_exp es = spacesep (List.map string_exp es) in
+  let string_of_binding (n, e) = "(" ^ n ^ " " ^ (string_exp e) ^ ")" in
   function
   | Literal e -> string_val e
   | Var n -> n
@@ -173,10 +175,10 @@ let rec string_exp =
   | Apply (f, e) -> "(apply " ^ string_exp f ^ " " ^ string_exp e ^ ")"
   | Call (f, es) -> "(" ^ string_exp f ^ " " ^ spacesep_exp es ^ ")"
   | Lambda (ns, e) ->  "(lambda (" ^ spacesep ns ^ ") " ^ string_exp e ^ ")"
-  | Let (bs, e) ->
-      let string_of_binding (n, e) = "(" ^ n ^ " " ^ (string_exp e) ^ ")" in
-      let bindings_strings = List.map string_of_binding bs in
-      "(let (" ^ (String.concat " " bindings_strings) ^ ") " ^ string_exp e ^ ")"
+  | Let (kind, bs, e) ->
+      let str = match kind with | LET -> "let" | LETSTAR -> "let*" in
+      let bindings = spacesep (List.map string_of_binding bs) in
+      "(" ^ str ^ " (" ^ bindings ^ ") " ^ string_exp e ^ ")"
   | Defexp (Val (n, e)) -> "(val " ^ n ^ " " ^ string_exp e ^ ")"
   | Defexp (Def (n, ns, e)) ->
       "(define " ^ n ^ "(" ^ spacesep ns ^ ") " ^ string_exp e ^ ")"
@@ -221,6 +223,10 @@ let rec build_ast sexp =
         If (build_ast cond, build_ast res, cond_to_if condpairs)
     | _ -> raise (TypeError "(cond c0 c1 c2 c3 ...)")
   in
+  let valid_let = function | "let" | "let*" -> true | _ -> false in
+  let to_kind = function | "let" -> LET | "let*" -> LETSTAR
+                         | _ -> raise (TypeError "Unknown let")
+  in
   match sexp with
   | Primitive _ | Closure _ -> raise ThisCan'tHappenError
   | Fixnum _ | Boolean _ | Nil | Quote _ -> Literal sexp
@@ -250,14 +256,14 @@ let rec build_ast sexp =
       | [Symbol "apply"; fnexp; args] ->
           Apply (build_ast fnexp, build_ast args)
       | (Symbol "cond")::conditions -> cond_to_if conditions
-      | (Symbol "let")::bindings::exp::[] when is_list bindings ->
+      | (Symbol s)::bindings::exp::[] when is_list bindings && valid_let s ->
           let mkbinding = function
             | Pair (Symbol n, Pair (e, Nil)) -> n, build_ast e
             | _ -> raise (TypeError "(let bindings exp)")
           in
           let bindings = List.map mkbinding (pair_to_list bindings) in
           let () = assert_unique (List.map fst bindings) in
-          Let (bindings, (build_ast exp))
+          Let (to_kind s, bindings, (build_ast exp))
       | fnexp::args -> Call (build_ast fnexp, List.map build_ast args)
       | [] -> raise (ParseError "poorly formed expression"))
   | Pair _ -> Literal sexp
@@ -296,9 +302,12 @@ let rec evalexp exp env =
     | Call (Var "env", []) -> env_to_val env
     | Call (e, es) -> evalapply (ev e) (List.map ev es)
     | Lambda (ns, e) -> Closure (ns, e, env)
-    | Let (bs, e) ->
+    | Let (LET, bs, e) ->
         let evbinding (n, e) = n, ref (Some (ev e)) in
         evalexp e (extend (List.map evbinding bs) env)
+    | Let (LETSTAR, bs, e) ->
+        let evbinding acc (n, e) = bind(n, evalexp e acc, acc) in
+        evalexp e (extend (List.fold_left evbinding [] bs) env)
     | Defexp d -> raise ThisCan'tHappenError
   in ev exp
 
