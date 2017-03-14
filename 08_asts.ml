@@ -133,31 +133,41 @@ let rec is_list e =
         | Pair(a, b) -> is_list b
         | _ -> false
 
-let rec print_val e =
-    let rec print_list l =
+
+let rec string_exp = function
+  | Literal e -> string_val e
+  | Var n -> n
+  | If (c, t, f) ->
+      "(if " ^ string_exp c ^ " " ^ string_exp t ^ " " ^ string_exp f ^ ")"
+  | And (c0, c1) -> "(and " ^ string_exp c0 ^ " " ^ string_exp c1 ^ ")"
+  | Or (c0, c1) -> "(or " ^ string_exp c0 ^ " " ^ string_exp c1 ^ ")"
+  | Apply (f, e) -> "(apply " ^ string_exp f ^ " " ^ string_exp e ^ ")"
+  | Call (f, es) ->
+      let string_es = (String.concat " " (List.map string_exp es)) in
+      "(" ^ string_exp f ^ " " ^ string_es ^ ")"
+  | Defexp (Val (n, e)) -> "(val " ^ n ^ " " ^ string_exp e ^ ")"
+  | Defexp (Exp e) -> string_exp e
+
+and string_val e =
+    let rec string_list l =
         match l with
-        | Pair(a, Nil) -> print_val a
-        | Pair(a, b) -> print_val a; print_string " "; print_list b
+        | Pair (a, Nil) -> string_val a
+        | Pair (a, b) -> string_val a ^ " " ^ string_list b
         | _ -> raise ThisCan'tHappenError
     in
-    let print_pair p =
+    let string_pair p =
         match p with
-        | Pair(a, b) -> print_val a; print_string " . "; print_val b
+        | Pair (a, b) -> string_val a ^ " . " ^ string_val b
         | _ -> raise ThisCan'tHappenError
     in
     match e with
-    | Fixnum(v) -> print_int v
-    | Boolean(b) -> print_string (if b then "#t" else "#f")
-    | Symbol(s) -> print_string s
-    | Nil -> print_string "nil"
-    | Pair(a, b) ->
-            print_string "(";
-            if is_list e
-            then print_list e
-            else print_pair e;
-            print_string ")"
-    | Primitive(name, _) -> print_string ("#<primitive:" ^ name ^ ">")
-
+    | Fixnum v -> string_of_int v
+    | Boolean b -> if b then "#t" else "#f"
+    | Symbol s -> s
+    | Nil -> "nil"
+    | Pair (a, b) ->
+            "(" ^ (if is_list e then string_list e else string_pair e) ^ ")"
+    | Primitive (name, _) -> "#<primitive:" ^ name ^ ">"
 
 exception TypeError of string;;
 exception ParseError of string
@@ -225,9 +235,8 @@ let rec repl stm env =
   flush stdout;
   let ast = build_ast (read_sexp stm) in
   let (result, env') = eval ast env in
-  print_val result;
-  print_newline ();
-  repl stm env';;
+  let () = print_endline (string_val result) in
+  repl stm env'
 
 let basis =
     let rec prim_list = function
