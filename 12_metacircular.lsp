@@ -10,12 +10,12 @@
   (cond (x #f)
         (#t #t)))
 
+(val cons pair)
+
 (define append. (x y)
   (cond ((null. x) y)
         (#t (cons (car x)
                   (append. (cdr x) y)))))
-
-(val cons pair)
 
 (define list. (x y)
   (cons x (cons y '())))
