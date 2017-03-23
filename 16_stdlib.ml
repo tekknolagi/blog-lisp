@@ -1,5 +1,9 @@
-type stream =
-  { mutable line_num: int; mutable chr: char list; chan: in_channel };;
+type 'a stream = {
+  mutable line_num: int;
+  mutable chr: char list;
+  stdin: bool;
+  stm: 'a Stream.t
+}
 
 let stringOfChar c =
     String.make 1 c;;
@@ -7,7 +11,7 @@ let stringOfChar c =
 let read_char stm =
     match stm.chr with
       | [] ->
-              let c = input_char stm.chan in
+              let c = Stream.next stm.stm in
               if c = '\n' then let _ = stm.line_num <- stm.line_num + 1 in c
               else c
       | c::rest ->
@@ -321,7 +325,7 @@ let rec evalexp exp env =
         evalexp body (extend (List.map evbinding bs) env)
     | Let (LETSTAR, bs, body) ->
         let evbinding acc (n, e) = bind (n, evalexp e acc, acc) in
-        evalexp body (extend (List.fold_left evbinding [] bs) env)
+        evalexp body (List.fold_left evbinding env bs)
     | Let (LETREC, bs, body) ->
         let names, values = unzip bs in
         let env' = bindloclist names (List.map mkloc values) env in
@@ -329,7 +333,15 @@ let rec evalexp exp env =
         let () = List.iter (fun (n, v) -> (List.assoc n env') := v) updates in
         evalexp body env'
     | Defexp d -> raise ThisCan'tHappenError
-  in ev exp
+  in
+  try
+    ev exp
+  with e ->
+    (
+      let err = Printexc.to_string e in
+      print_endline @@ "Error: " ^ err ^ " in expression " ^ string_exp exp;
+      raise e
+    )
 
 let evaldef def env =
   match def with
@@ -349,14 +361,13 @@ let evaldef def env =
 let eval ast env =
   match ast with
   | Defexp d -> evaldef d env
-  | e -> (evalexp e env, env)
+  | e -> evalexp e env, env
 
 let rec repl stm env =
-  print_string "> ";
-  flush stdout;
+  if stm.stdin then ( print_string "> "; flush stdout; );
   let ast = build_ast (read_sexp stm) in
   let (result, env') = eval ast env in
-  print_endline (string_val result);
+  if stm.stdin then print_endline (string_val result);
   repl stm env';;
 
 let basis =
@@ -401,10 +412,28 @@ let basis =
     | [_] -> Boolean true
     | _ -> raise (TypeError "(atom? single-arg)")
   in
+  let prim_getchar = function
+    | [] ->
+        (try Fixnum (int_of_char @@ input_char stdin)
+        with End_of_file -> Fixnum (-1))
+    | _ -> raise (TypeError "(getchar)")
+  in
+  let prim_print = function
+    | [v] -> let () = print_string @@ string_val v in Symbol "ok"
+    | _ -> raise (TypeError "(print val)")
+  in
+  let prim_itoc = function
+    | [Fixnum i] -> Symbol (stringOfChar @@ char_of_int i)
+    | _ -> raise (TypeError "(itoc int)")
+  in
+  let prim_cat = function
+    | [Symbol a; Symbol b] -> Symbol (a ^ b)
+    | _ -> raise (TypeError "(cat sym sym)")
+  in
   let newprim acc (name, func) =
     bind (name, Primitive(name, func), acc)
   in
-  List.fold_left newprim [] [
+  List.fold_left newprim ["empty-symbol", ref (Some (Symbol ""))] [
     numprim "+" (+);
     numprim "-" (-);
     numprim "*" ( * );
@@ -418,9 +447,99 @@ let basis =
     ("cdr", prim_cdr);
     ("eq", prim_eq);
     ("atom?", prim_atomp);
-    ("sym?", prim_symp)
+    ("sym?", prim_symp);
+    ("getchar", prim_getchar);
+    ("print", prim_print);
+    ("itoc", prim_itoc);
+    ("cat", prim_cat);
   ]
 
+let mkstream is_stdin stm = { chr=[]; line_num=1; stdin=is_stdin; stm=stm } 
+let mkstringstream s      = mkstream false     @@ Stream.of_string s
+let mkfilestream f        = mkstream (f=stdin) @@ Stream.of_channel f
+
+let stdlib =
+  let ev env e =
+    match e with
+    | Defexp d -> evaldef d env
+    | _ -> raise (TypeError "Can only have definitions in stdlib")
+  in
+  let rec slurp stm env =
+    try  stm |> read_sexp |> build_ast |> ev env |> snd |> slurp stm
+    with Stream.Failure -> env
+  in
+  let stm = mkstringstream "
+  (define o (f g) (lambda (x) (f (g x))))
+  (val caar (o car car))
+  (val cadr (o car cdr))
+  (val caddr (o cadr cdr))
+  (val cadar (o car (o cdr car)))
+  (val caddar (o car (o cdr (o cdr car))))
+
+  (val cons pair)
+
+  (val newline (itoc 10))
+  (val space (itoc 32))
+
+  ; This is pretty awkward looking because we have no other way to sequence
+  ; operations. We have no begin, nothing.
+  (define println (s)
+    (let ((ok (print s)))
+      (print newline)))
+
+  ; This is less awkward because we actually use ic and c.
+  (define getline ()
+    (let* ((ic (getchar))
+           (c (itoc ic)))
+      (if (or (eq c newline) (eq ic ~1))
+        empty-symbol
+        (cat c (getline)))))
+
+  (define null? (xs)
+    (eq xs '()))
+
+  (define length (ls)
+    (if (null? ls)
+      0
+      (+ 1 (length (cdr ls)))))
+
+  (define take (n ls)
+    (if (or (< n 1) (null? ls))
+      '()
+      (cons (car ls) (take (- n 1) (cdr ls)))))
+
+  (define drop (n ls)
+    (if (or (< n 1) (null? ls))
+      ls
+      (drop (- n 1) (cdr ls))))
+
+  (define merge (xs ys)
+    (if (null? xs)
+      ys
+      (if (null? ys)
+        xs
+        (if (< (car xs) (car ys))
+          (cons (car xs) (merge (cdr xs) ys))
+          (cons (car ys) (merge xs (cdr ys)))))))
+
+  (define mergesort (ls)
+    (if (null? ls)
+      ls
+      (if (null? (cdr ls))
+        ls
+        (let* ((size (length ls))
+               (half (/ size 2))
+               (first (take half ls))
+               (second (drop half ls)))
+          (merge (mergesort first) (mergesort second))))))
+  "
+  in slurp stm basis
+
+let get_ic () =
+  try  open_in Sys.argv.(1)
+  with Invalid_argument s -> stdin
+
 let main =
-  let stm = { chr=[]; line_num=1; chan=stdin } in
-  repl stm basis;;
+  let ic = get_ic () in
+  try  repl (mkfilestream ic) stdlib
+  with Stream.Failure -> if ic <> stdin then close_in ic

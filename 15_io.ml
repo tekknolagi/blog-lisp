@@ -329,15 +329,7 @@ let rec evalexp exp env =
         let () = List.iter (fun (n, v) -> (List.assoc n env') := v) updates in
         evalexp body env'
     | Defexp d -> raise ThisCan'tHappenError
-  in
-  try
-    ev exp
-  with e ->
-    (
-      print_endline @@
-        "Error: " ^ Printexc.to_string e ^ " in expression " ^ string_exp exp;
-      raise e
-    )
+  in ev exp
 
 let evaldef def env =
   match def with
